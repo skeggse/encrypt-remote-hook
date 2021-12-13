@@ -3,7 +3,7 @@
 # Arch's initcpio /init sources this file via ash, so we have to include this
 # shim file.
 run_hook() {
-    /hooks/encrypt-remote
+    /hooks/encrypt-remote-hook-main
 }
 
 # vim: set ft=sh ts=4 sw=4 et:
