@@ -78,10 +78,12 @@ impl ResolveKey for Key {
             Key::RootFS { path } => read_to_end(path),
             Key::HTTPS { url } => {
                 let mut data = Vec::new();
-                ureq::get(url)
-                    .call()?
-                    .into_reader()
-                    .read_to_end(&mut data)?;
+                let req = ureq::get(url);
+                let protocol = req.request_url()?.scheme();
+                if protocol != "https" {
+                    return Err(anyhow!("unsupported protocol {}"));
+                }
+                req.call()?.into_reader().read_to_end(&mut data)?;
                 Ok(data)
             }
         }
