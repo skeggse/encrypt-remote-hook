@@ -79,9 +79,10 @@ impl ResolveKey for Key {
             Key::HTTPS { url } => {
                 let mut data = Vec::new();
                 let req = ureq::get(url);
-                let protocol = req.request_url()?.scheme();
+                let url = req.request_url()?;
+                let protocol = url.scheme();
                 if protocol != "https" {
-                    return Err(anyhow!("unsupported protocol {}"));
+                    return Err(anyhow!("unsupported protocol {}", protocol));
                 }
                 req.call()?.into_reader().read_to_end(&mut data)?;
                 Ok(data)
