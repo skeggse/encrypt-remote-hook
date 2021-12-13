@@ -1,5 +1,11 @@
 [package]
 name = "encrypt-remote-hook"
+license = "MIT"
+description = "A rust-based initcpio hook to configure full-disk encryption by reading a secret key from a remote endpoint."
+homepage = "https://github.com/skeggse/encrypt-remote-hook"
+documentation = "https://github.com/skeggse/encrypt-remote-hook"
+repository = "https://github.com/skeggse/encrypt-remote-hook"
+readme = "README.md"
 version = "0.1.0"
 edition = "2021"
 
