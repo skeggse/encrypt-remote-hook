@@ -72,20 +72,18 @@ fn get_dns_servers() -> io::Result<Vec<UpstreamServer>> {
         if path.is_file() && path_str.starts_with("/tmp/net-") && path_str.ends_with(".conf") {
             // For whatever reason, the DEVICE line can include a 0xf8 and make
             // the entire file invalid UTF-8.
-            let conf = dotenv_parser::parse_dotenv(&read_to_string_lossy(&path)?).map_err(|_| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("failed to parse {}", path_str),
-                )
-            })?;
+            let conf =
+                dotenv_parser::parse_dotenv(&read_to_string_lossy(&path)?).map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("failed to parse {}", path_str),
+                    )
+                })?;
             for field in DNS_FIELDS.iter() {
                 if let Some(addr) = conf.get(field as &str) {
                     let addr = Ipv4Addr::from_str(addr).map_err(|_| {
-                                io::Error::new(
-                                    io::ErrorKind::InvalidData,
-                                    "failed to parse ip address",
-                                )
-                            })?;
+                        io::Error::new(io::ErrorKind::InvalidData, "failed to parse ip address")
+                    })?;
                     if addr == Ipv4Addr::new(0, 0, 0, 0) {
                         // It seems that this address sometimes shows up as a
                         // sentinel value, meaning nil.
@@ -94,10 +92,7 @@ fn get_dns_servers() -> io::Result<Vec<UpstreamServer>> {
                     servers.push(UpstreamServer::new(
                         // No clear reason to use SocketAddr instead of IpAddr,
                         // because dnsclient doesn't use the port.
-                        SocketAddrV4::new(
-                            addr,
-                            53,
-                        ),
+                        SocketAddrV4::new(addr, 53),
                     ));
                 }
             }
