@@ -7,6 +7,7 @@ use std::{
     io,
     io::Read,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    path::Path,
     process::{Command, ExitStatus, Output, Stdio},
     str::FromStr,
 };
@@ -53,20 +54,30 @@ fn read_config() -> Result<Box<Config>> {
     toml::de::from_slice(&config_data).context(format!("failed to parse {}", CONFIG_PATH))
 }
 
+// Not optimized, unlikely fs::read_to_string :(
+fn read_to_string_lossy(path: &Path) -> io::Result<String> {
+    let mut file = File::open(path)?;
+    let mut buf = vec![];
+    file.read_to_end(&mut buf)?;
+    Ok(String::from_utf8_lossy(&buf).into())
+}
+
 fn get_dns_servers() -> io::Result<Vec<UpstreamServer>> {
     let mut servers = vec![];
     for entry in fs::read_dir("/tmp")? {
         let path = entry?.path();
         let path = path.as_path();
         let path_str = path.to_string_lossy();
+
         if path.is_file() && path_str.starts_with("/tmp/net-") && path_str.ends_with(".conf") {
-            let conf = dotenv_parser::parse_dotenv(&fs::read_to_string(&path)?).map_err(|_| {
+            // For whatever reason, the DEVICE line can include a 0xf8 and make
+            // the entire file invalid UTF-8.
+            let conf = dotenv_parser::parse_dotenv(&read_to_string_lossy(&path)?).map_err(|_| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("failed to parse {}", path_str),
                 )
             })?;
-            println!("{:?}", conf);
             for field in DNS_FIELDS.iter() {
                 if let Some(addr) = conf.get(field as &str) {
                     let addr = Ipv4Addr::from_str(addr).map_err(|_| {
