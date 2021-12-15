@@ -10,6 +10,8 @@ This hook does not consider or respect any kernel command line parameters, inclu
 
 Make sure to add a network hook!
 
+This hook will use DNS information from `/etc/resolv.conf`, and fall back to reading from `/tmp/net-*.conf`.
+
 Configure the hook by placing a configuration file in `/etc/crypttab.remote.toml`:
 
 ```toml

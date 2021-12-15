@@ -1,12 +1,16 @@
 use anyhow::{anyhow, Context, Result};
+use dnsclient::UpstreamServer;
 use serde::Deserialize;
-
 use std::{
     env, fs,
     fs::File,
+    io,
     io::Read,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     process::{Command, ExitStatus, Output, Stdio},
+    str::FromStr,
 };
+use ureq::Resolver;
 
 #[derive(Deserialize)]
 struct Device {
@@ -34,6 +38,7 @@ struct Config {
 const CONFIG_PATH: &'static str = "/etc/crypttab.remote.toml";
 const KEYFILE_PATH: &'static str = "/crypto_keyfile_combined.bin";
 const SCHEMES: &'static [&'static str] = &["LABEL=", "UUID=", "PARTLABEL=", "PARTUUID="];
+const DNS_FIELDS: &'static [&'static str] = &["IPV4DNS0", "IPV4DNS1"];
 
 fn read_to_end(filename: &str) -> Result<Vec<u8>> {
     let mut file = File::open(filename).context(format!("failed to open {}", filename))?;
@@ -46,6 +51,88 @@ fn read_to_end(filename: &str) -> Result<Vec<u8>> {
 fn read_config() -> Result<Box<Config>> {
     let config_data = read_to_end(CONFIG_PATH)?;
     toml::de::from_slice(&config_data).context(format!("failed to parse {}", CONFIG_PATH))
+}
+
+fn get_dns_servers() -> io::Result<Vec<UpstreamServer>> {
+    let mut servers = vec![];
+    for entry in fs::read_dir("/tmp")? {
+        let path = entry?.path();
+        let path = path.as_path();
+        let path_str = path.to_string_lossy();
+        if path.is_file() && path_str.starts_with("/tmp/net-") && path_str.ends_with(".conf") {
+            let conf = dotenv_parser::parse_dotenv(&fs::read_to_string(&path)?).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("failed to parse {}", path_str),
+                )
+            })?;
+            println!("{:?}", conf);
+            for field in DNS_FIELDS.iter() {
+                if let Some(addr) = conf.get(field as &str) {
+                    let addr = Ipv4Addr::from_str(addr).map_err(|_| {
+                                io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    "failed to parse ip address",
+                                )
+                            })?;
+                    if addr == Ipv4Addr::new(0, 0, 0, 0) {
+                        // It seems that this address sometimes shows up as a
+                        // sentinel value, meaning nil.
+                        continue;
+                    }
+                    servers.push(UpstreamServer::new(
+                        // No clear reason to use SocketAddr instead of IpAddr,
+                        // because dnsclient doesn't use the port.
+                        SocketAddrV4::new(
+                            addr,
+                            53,
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    if servers.len() == 0 {
+        Err(io::Error::new(
+            io::ErrorKind::AddrNotAvailable,
+            "no servers provided by dhcp",
+        ))
+    } else {
+        Ok(servers)
+    }
+}
+
+struct InitResolver;
+
+// We can't rely on libnss existing or being able to getaddrinfo, so we make the
+// dns request manually based on what's available in /tmp/net-*.conf.
+impl Resolver for InitResolver {
+    fn resolve(&self, netloc: &str) -> io::Result<Vec<SocketAddr>> {
+        // rust implements this with LookupHost, but doesn't seem to expose that
+        // functionality.
+        let (host, port_str) = netloc
+            .rsplit_once(':')
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid socket address"))?;
+        let port: u16 = port_str
+            .parse()
+            .ok()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid port value"))?;
+
+        let client = dnsclient::sync::DNSClient::new_with_system_resolvers()
+            .or_else::<io::Error, _>(|_| Ok(dnsclient::sync::DNSClient::new(get_dns_servers()?)))?;
+        let mut a: Vec<SocketAddr> = client
+            .query_a(host)?
+            .into_iter()
+            .map(|a| SocketAddr::new(a.into(), port))
+            .collect();
+        a.extend(
+            client
+                .query_aaaa(host)?
+                .into_iter()
+                .map(|a| SocketAddr::new(a.into(), port)),
+        );
+        Ok(a)
+    }
 }
 
 // Adapted from https://salsa.debian.org/kernel-team/initramfs-tools/-/blob/master/scripts/functions.
@@ -77,8 +164,10 @@ impl ResolveKey for Key {
         match self {
             Key::RootFS { path } => read_to_end(path),
             Key::HTTPS { url } => {
+                // TODO: re-use agent?
+                let agent = ureq::builder().resolver(InitResolver).build();
                 let mut data = Vec::new();
-                let req = ureq::get(url);
+                let req = agent.get(url);
                 let url = req.request_url()?;
                 let protocol = url.scheme();
                 if protocol != "https" {
