@@ -124,8 +124,9 @@ impl Resolver for InitResolver {
             .ok()
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid port value"))?;
 
-        let client = dnsclient::sync::DNSClient::new_with_system_resolvers()
-            .or_else::<io::Error, _>(|_| Ok(dnsclient::sync::DNSClient::new(get_dns_servers()?)))?;
+        // let client = dnsclient::sync::DNSClient::new_with_system_resolvers()
+        //     .or_else::<io::Error, _>(|_| Ok(dnsclient::sync::DNSClient::new(get_dns_servers()?)))?;
+        let client = dnsclient::sync::DNSClient::new(get_dns_servers()?);
         let mut a: Vec<SocketAddr> = client
             .query_a(host)?
             .into_iter()
@@ -261,10 +262,10 @@ impl StdioNull for Command {
 fn main() -> Result<()> {
     let quiet_mode = env::var("quiet").map(|q| q == "y").unwrap_or(false);
 
-    Command::new("modprobe")
-        .args(["-a", "-q", "dm-crypt"])
-        .stdio_null()
-        .check_okay("modprobe dm-crypt")?;
+    // Command::new("modprobe")
+    //     .args(["-a", "-q", "dm-crypt"])
+    //     .stdio_null()
+    //     .check_okay("modprobe dm-crypt")?;
 
     let config = read_config()?;
 
@@ -283,24 +284,24 @@ fn main() -> Result<()> {
     let key = config.resolve_key()?;
     fs::write(KEYFILE_PATH, key)?;
 
-    Command::new("cryptsetup")
-        .args([
-            "--key-file",
-            KEYFILE_PATH,
-            "open",
-            "--type",
-            "luks",
-            block_device,
-            &config.device.name,
-        ])
-        .stdin(Stdio::null())
-        .stdout(if quiet_mode {
-            Stdio::null()
-        } else {
-            Stdio::inherit()
-        })
-        .stderr(Stdio::null())
-        .check_okay("cryptsetup open")?;
+    // Command::new("cryptsetup")
+    //     .args([
+    //         "--key-file",
+    //         KEYFILE_PATH,
+    //         "open",
+    //         "--type",
+    //         "luks",
+    //         block_device,
+    //         &config.device.name,
+    //     ])
+    //     .stdin(Stdio::null())
+    //     .stdout(if quiet_mode {
+    //         Stdio::null()
+    //     } else {
+    //         Stdio::inherit()
+    //     })
+    //     .stderr(Stdio::null())
+    //     .check_okay("cryptsetup open")?;
 
     // finally, rm keyfile
     if let Err(err) = fs::remove_file(KEYFILE_PATH) {
